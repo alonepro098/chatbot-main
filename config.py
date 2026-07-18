@@ -15,5 +15,5 @@ MONGO_URL = getenv("MONGO_URL", None)
 OWNER_ID = int(getenv("OWNER_ID", "1999645649"))
 SUPPORT_GRP = getenv("SUPPORT_GRP", "dil_kee_alfaz")
 UPDATE_CHNL = getenv("UPDATE_CHNL", "about_candyy")
-OWNER_USERNAME = getenv("OWNER_USERNAME", "http_candy")
+OWNER_USERNAME = getenv("OWNER_USERNAME", "candy_caugh")
 
