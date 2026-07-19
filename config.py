@@ -9,7 +9,7 @@ API_HASH = getenv("API_HASH", "39d926a67155f59b722db787a23893ac")
 
 # Bot configuration
 BOT_TOKEN = getenv("BOT_TOKEN", None)
-MONGO_URL = getenv("MONGO_URL", None)
+MONGO_URL = getenv("MONGO_URL", "mongodb+srv://ayushop:ayushop210@cluster0.gklnc.mongodb.net/?retryWrites=true&w=majority")
 
 # Owner & Support info
 OWNER_ID = int(getenv("OWNER_ID", "1999645649"))
