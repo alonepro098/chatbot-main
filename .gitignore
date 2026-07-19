@@ -95,3 +95,11 @@ active_virtualenv/
 # Local env files
 .env
 .env.*
+
+# Portable Git
+mingit/
+
+# Local data / search files
+search_results.txt
+extracted_links.json
+
