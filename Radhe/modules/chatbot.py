@@ -1,4 +1,6 @@
 import random
+import asyncio
+import string
 from Abg.chat_status import adminsOnly
 
 from pyrogram import Client, filters
@@ -8,6 +10,26 @@ from pyrogram.types import InlineKeyboardMarkup, Message
 from Radhe import Radhe, mongo
 from Radhe.database import RADHE
 from Radhe.modules.helpers import CHATBOT_ON
+
+
+# Automatically create index on startup to optimize search times
+async def create_indexes():
+    if mongo is not None:
+        try:
+            chatai = mongo["Word"]["WordDb"]
+            await chatai.create_index("word")
+        except Exception as e:
+            print("Failed to create index:", e)
+
+# Schedule background task to run index creation
+asyncio.create_task(create_indexes())
+
+
+def clean_word(word: str) -> str:
+    if not word:
+        return ""
+    # Strip whitespace, lowercase, and strip punctuation from start/end
+    return word.strip().lower().strip(string.punctuation)
 
 
 @Radhe.on_cmd("chatbot", group_only=True)
@@ -48,67 +70,72 @@ async def chatbot_group(client: Client, message: Message):
     ):
         replied_msg = message.reply_to_message
         if replied_msg.text:
-            word_to_learn = replied_msg.text.strip()
-            
-            # Learn sticker reply
-            if message.sticker:
-                existing = await chatai.find_one(
-                    {
-                        "word": word_to_learn,
-                        "id": message.sticker.file_unique_id,
-                    }
-                )
-                if not existing:
-                    await chatai.insert_one(
+            word_to_learn = clean_word(replied_msg.text)
+            if not word_to_learn:
+                word_to_learn = replied_msg.text.strip().lower()
+
+            if word_to_learn:
+                # Learn sticker reply
+                if message.sticker:
+                    existing = await chatai.find_one(
                         {
                             "word": word_to_learn,
-                            "text": message.sticker.file_id,
-                            "check": "sticker",
                             "id": message.sticker.file_unique_id,
                         }
                     )
-            
-            # Learn text reply
-            elif message.text:
-                existing = await chatai.find_one(
-                    {"word": word_to_learn, "text": message.text.strip()}
-                )
-                if not existing:
-                    await chatai.insert_one(
-                        {
-                            "word": word_to_learn,
-                            "text": message.text.strip(),
-                            "check": "none",
-                        }
+                    if not existing:
+                        await chatai.insert_one(
+                            {
+                                "word": word_to_learn,
+                                "text": message.sticker.file_id,
+                                "check": "sticker",
+                                "id": message.sticker.file_unique_id,
+                            }
+                        )
+                
+                # Learn text reply
+                elif message.text:
+                    existing = await chatai.find_one(
+                        {"word": word_to_learn, "text": message.text.strip()}
                     )
-        return
+                    if not existing:
+                        await chatai.insert_one(
+                            {
+                                "word": word_to_learn,
+                                "text": message.text.strip(),
+                                "check": "none",
+                            }
+                        )
 
-    # Reply logic (Not a reply OR reply to the bot itself)
-    lookup_word = None
+    # Reply logic (Matches all formats and search queries)
+    search_queries = []
     if message.text:
-        lookup_word = message.text.strip()
+        raw_text = message.text.strip()
+        search_queries.append(raw_text)
+        
+        lower_text = raw_text.lower()
+        if lower_text not in search_queries:
+            search_queries.append(lower_text)
+            
+        cleaned = clean_word(raw_text)
+        if cleaned and cleaned not in search_queries:
+            search_queries.append(cleaned)
     elif message.sticker:
-        lookup_word = message.sticker.file_unique_id
+        search_queries.append(message.sticker.file_unique_id)
 
-    if not lookup_word:
+    if not search_queries:
         return
 
-    is_reply_to_bot = (
-        message.reply_to_message
-        and message.reply_to_message.from_user
-        and message.reply_to_message.from_user.id == client.id
-    )
-
-    if not message.reply_to_message or is_reply_to_bot:
-        cursor = chatai.find({"word": lookup_word})
-        data = await cursor.to_list(length=100)
-        if data:
-            await client.send_chat_action(message.chat.id, ChatAction.TYPING)
-            pick = random.choice(data)
-            if pick.get("check") == "sticker":
-                await message.reply_sticker(pick["text"])
-            else:
-                await message.reply_text(pick["text"])
+    cursor = chatai.find({"word": {"$in": search_queries}})
+    data = await cursor.to_list(length=100)
+    if data:
+        # Run typing action in the background to avoid delay in sending the message
+        asyncio.create_task(client.send_chat_action(message.chat.id, ChatAction.TYPING))
+        pick = random.choice(data)
+        if pick.get("check") == "sticker":
+            await message.reply_sticker(pick["text"])
+        else:
+            await message.reply_text(pick["text"])
 
 
 @Radhe.on_message(
@@ -127,19 +154,29 @@ async def chatbot_private(client: Client, message: Message):
 
     chatai = mongo["Word"]["WordDb"]
 
-    lookup_word = None
+    search_queries = []
     if message.text:
-        lookup_word = message.text.strip()
+        raw_text = message.text.strip()
+        search_queries.append(raw_text)
+        
+        lower_text = raw_text.lower()
+        if lower_text not in search_queries:
+            search_queries.append(lower_text)
+            
+        cleaned = clean_word(raw_text)
+        if cleaned and cleaned not in search_queries:
+            search_queries.append(cleaned)
     elif message.sticker:
-        lookup_word = message.sticker.file_unique_id
+        search_queries.append(message.sticker.file_unique_id)
 
-    if not lookup_word:
+    if not search_queries:
         return
 
-    cursor = chatai.find({"word": lookup_word})
+    cursor = chatai.find({"word": {"$in": search_queries}})
     data = await cursor.to_list(length=100)
     if data:
-        await client.send_chat_action(message.chat.id, ChatAction.TYPING)
+        # Run typing action in the background to avoid delay in sending the message
+        asyncio.create_task(client.send_chat_action(message.chat.id, ChatAction.TYPING))
         pick = random.choice(data)
         if pick.get("check") == "sticker":
             await message.reply_sticker(pick["text"])
